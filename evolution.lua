@@ -32,48 +32,84 @@
 --для начала вычислений нам понадобится занести данные
 --в массивы field и screen.
 
---Проинициируем массивы. они будут носить заданный размер 250*250
-local field, screen, actualScreenChanges = {},{},{}
+--Проинициируем массивы. они будут носить заданный размер 248*248
+--Этот размер связан исключительно с удобством вывода на экран
+--почти максимального поля и, возмоно, инфопанели
+unicode=require('unicode')
+gpu=require('component').gpu
+local xs, ys = 248, 248
+
+local field, screen, actualScreenChanges,chars = {},{},{},{}
 --field содержит опорную информацию о поле для вычислений
 --screen содержит перечень узлов field, к которым необходимо
 --прявить пристальное внимание и выяснить их дальнейшую судьбу
 --actualScreenChanges представляет собой список узлов
 --сменивших своё состояние в течении текущей итерации.
 --проинициируем все узлы таблиц в field и таблицы в screen
-field.righ,field.left,screen.left,screen.right = {},{},{},{}
-
-local function tablesInit()
-local xs, ys = 250, 250
-for y = 1,ys do 
-    field.right[y] = {}
-    field.left[y] = {}
-    for x=1, xs do 
-        field.right[y][x] = 0
-        field.left[y][x] = 0
-    end
-end
-return 'tadaaa'
-end
-
+field.right,field.left,screen.left,screen.right = {},{},{},{}
 local l,r = 'left','right'
+local function tablesInit()
+	for y = 1,ys do 
+	    field[r][y] = {}
+	    field[l][y] = {}
+	    for x=1, xs do 
+	        field[r][y][x] = 0
+	        field[l][y][x] = 0
+	    end
+	end
+	local ch_y=(ys-ys%4)/4
+	for y=1,ch_y do chars[y]={}end
+	return 'tadaaa'
+end
+
 --назначили левое поле источником рассчётов следующей итерации
+
+--опишем биткарту шрифта брайля
+local bits = {1,8,2,16,4,32,64,128}
+--попробуем описать трансформацию значений массива в шрифт брайля
+function toUnicode(r,l)
+	for y in pairs(actualScreenChanges) do
+		ch_y=(y-y%4)/4+1
+		if not chars[ch_y] then
+			chars[ch_y]={}
+		end
+		for x in pairs(actualScreenChanges) do
+			ch_x=(x-x%2)/2+1
+			--единица равна сету, используется or
+			--ноль равен войду, используется and
+			if not chars[ch_y][ch_x] then 
+				chars[ch_y][ch_x]=0
+			end
+			print (bits[(y%4)*2+x%2+1])
+			print (chars[ch_y][ch_x])
+			print (actualScreenChanges[y][x])
+			chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[(y%4)*2+x%2+1]*actualScreenChanges[y][x]
+		end
+	end
+	return true
+end
 
 --попросим пользователя внести начальные данные
 function userInput(l)
+	field[l][23]={}
+	field[l][23][23]=1
+	field[l][23][23]=1
+	field[l][23][23]=1
+	field[l][22][23]=1
     return 'получили данные'
 end
 
 --функция вычисления координат прилегающих клеток
-local function getAdjoining(y,ys)
+local function getAdjoining(n,ns)
 local yl, yr = 1,1
-    if y > 1 and y < ys then 
-        yl=y-1 
-        yr=y+y-1 
+    if n > 1 and n < ns then 
+        yl=n-1 
+        yr=n+n-1 
     else
-        if y== 1 then 
-            yl, yr = ys, y+1
+        if n== 1 then 
+            yl, yr = ys, n+1
         else 
-            yl,yr = y-1, y-1 
+            yl,yr = n-1, n-1 
         end 
     end
     return yl,yr
@@ -94,14 +130,15 @@ return 'completed'
 end
 
 --сохраняем первичный список состояний узлов
-local function saveChanges(l)--получаем имя таблицы
-local s=l
+local function saveChanges()--получаем имя таблицы
+screen[l]={}
+for y=1,ys do screen[l][y]={} end
 for y in pairs(field[l])do
    yl,yr = getAdjoining(y,ys)
     for x in pairs(field[l])do 
         if field[l][y][x] == 1 then 
             xl,xr = getAdjoining(x,xs)
-            setScreen(yl,y,yr,xl,x,xr,s)
+            setScreen(yl,y,yr,xl,x,xr,l)
         end 
     end
 end
@@ -121,51 +158,63 @@ end
 --3.таблица-указатель, на основе которой произойдут рассчёты.
 --4.пустая таблица-указатель
 function whatNews(l,r)--left and right sides
-    local p=l
     local neighbors = 0
     screen[r]={}
     actualScreenChanges={}
-    --подтаблицы экрана необходимо инициировать заранее
-    for y = 1, ys do 
-        screen[r][y]={}
-        actualScreenChanges[y]={}
+    for y=1,ys do 
+    	screen[r][y]={} 
+		actualScreenChanges[y]={}
     end
     --получаем из левого экрана сведения о узлах 
     --реалии которых нам интересны 
     for y in pairs (screen[l]) do 
-        yl,yr=getAdjoining(y)
+        yl,yr=getAdjoining(y,ys)
         for x in pairs(screen[l][y]) do 
-            xl,xr=getAdjoining(x)
+            xl,xr=getAdjoining(x,xs)
+            if not field[l][yl] then field[l][yl]={}end
+            if not field[l][yr]then field[l][yr]={}end
             neighbors = 
-            field[p][y][xl] + field[p][y][x] + field[p][y][xr] + 
-            field[p][yl][xl]+field[p][yl][x]+field[p][yl][xr]+
-            field[p][yr][xl]+field[p][yr][x]+field[p][yr][xr] 
+            (field[l][y][xl] or 0) + (field[l][y][x] or 0)+ (field[l][y][xr] or 0)+ 
+            (field[l][yl][xl] or 0) + (field[l][yl][x] or 0) + (field[l][yl][xr] or 0)+
+            (field[l][yr][xl] or 0) + (field[l][yr][x] or 0) + (field[l][yr][xr] or 0) 
             if neighbors == 3 then 
-                setScreen(yl,y,yr,xl,x,xr,r) 
-                --без проверки переключаем состояние узла
+                setScreen(yl,y,yr,xl,x,xr,r)
                 field[r][y][x]=1
-                actualScreenChanges[y][x]=1
+                if field[l][y][x]==0 then
+                	--узел ожил
+                	actualScreenChanges[y][x]=1
+                end
             else 
                 if neighbors ~= 2 then 
                     setScreen(yl,y,yr,xl,x,xr,r)
                     field[r][y][x]=0
-                    actualScreenChanges[y][x]=0
+                    if field[l][y][x]==1 then
+                    	--узел погиб
+                    	actualScreenChanges[y][x]=-1
+                    end
                 end 
             end 
         end 
+        if actualScreenChanges[y]=={} then actualScreenChanges[y]=nil end
     end
     --вычисления следующего состояния колонии завершены
     return 'calculations completed'
 end
 
 --выведем изменения на монитор
-function showMustGoOne(actualScreenChanges)
+function showMustGoOne()
     --show news on screen
+    --теперь выведем на экран символы брайля
+	--а за тем избавимся от пустых фрагментов (0x2800)
+	for y in pairs(chars)do
+		for x in pairs(chars[y])do
+			gpu.set(x,y,unicode.char(10240+chars[y][x]))
+		end
+	end
     return 'обновления успешно отображены'
 end
-
 ---для перехода к следующему витку поменяем ссылки на левое и правое
-function swap(l,r)
+function swap()
     l,r = r,l
     return 'swap complete'
 end
@@ -178,6 +227,7 @@ function allOK()
 end
 
 --вроде всё готово к началу работы програмки
+tablesInit()
 --запрашиваем начальное состояние поля
 userInput(l)
 --записываем полученные данные в мониторинг посредством screen
@@ -186,8 +236,9 @@ saveChanges()
 ---создадим цикл, чтобы всё работало
 while allOK() do 
     whatNews(l,r)
-    showMustGoOne(actualScreenChanges)
-    swap(l,r)
+    toUnicode(r,l)
+    showMustGoOne()
+    swap()
 end
 
 --В итоге у нас получилась довольно симпатичная програмка
