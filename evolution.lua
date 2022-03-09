@@ -7,37 +7,15 @@
 --Ниже будет расположено моё решение этого алгоритма
 --в рамках языка lua, среда Open Computers 1.7.5
 
---Когда-то в прошлом я узнал отсуществовании решения
---этой задачи, выполнявшейся в разы быстрее остальных.
---Меня это заинтересовало, и после некоторых размышлений
---мной было придумано довольно быстрое решение.
---Оно не было тогда реализовано. Сейчас, по прошествии
---полутора десятков лет, я попробую припомнить и повторить его
---с некоторыми изменениями соответствующими реалиям выбранной среды.
-
---Итак, начнём: у нас есть поле ограниченных размеров.
---На поле есть некоторое количество сгруппированных точек.
---Для обсчёта их состояний нам понадобятся 2 основных массива,
---каждый из которых будет содержать всё поле:
---один будет содержать текущие точки
---в другой будут заноситься изменения для следующей генерации.
---После завершения вычислений ссылки на массивы меняются местами.
---В дополнительном, иерархично расположенном выше массиве
---screen, будут отображаться ссылки для следующей итерации вычислений.
---задачей этого массива будет предоставление посредством ссылок сведений
---о координатах узлов, изменивших своё состояние, и смежных с ними.
---Ещё один, весьма похожий на него массив actualScreenChanges,
---используется как список произошедших изменений
---для вывода их на экран монитора.
---для начала вычислений нам понадобится занести данные
---в массивы field и screen.
-
 --Проинициируем массивы. они будут носить заданный размер 248*248
 --Этот размер связан исключительно с удобством вывода на экран
 --почти максимального поля и, возмоно, инфопанели
-unicode=require('unicode')
-gpu=require('component').gpu
+local unicode=require('unicode')
+local gpu=require('component').gpu
+local os=require('os')
 local xs, ys = 248, 248
+local iter=0
+local dots=5
 
 local field, screen, actualScreenChanges,chars = {},{},{},{}
 --field содержит опорную информацию о поле для вычислений
@@ -50,8 +28,8 @@ field.right,field.left,screen.left,screen.right = {},{},{},{}
 local l,r = 'left','right'
 local function tablesInit()
 	for y = 1,ys do 
-	    field[r][y] = {}
-	    field[l][y] = {}
+	    field[r][y] = {} field[l][y] = {}
+        screen[l][y] = {} screen[r][y] = {}
 	    for x=1, xs do 
 	        field[r][y][x] = 0
 	        field[l][y][x] = 0
@@ -62,19 +40,17 @@ local function tablesInit()
 	return 'tadaaa'
 end
 
---назначили левое поле источником рассчётов следующей итерации
-
 --опишем биткарту шрифта брайля
 local bits = {1,8,2,16,4,32,64,128}
 --попробуем описать трансформацию значений массива в шрифт брайля
-function toUnicode(r,l)
+function toUnicode()
 	for y in pairs(actualScreenChanges) do
-		ch_y=(y-y%4)/4+1
+		local ch_y=(y-y%4)/4+1
 		if not chars[ch_y] then
 			chars[ch_y]={}
 		end
 		for x in pairs(actualScreenChanges) do
-			ch_x=(x-x%2)/2+1
+			local ch_x=(x-x%2)/2+1
 			--единица равна сету, используется or
 			--ноль равен войду, используется and
 			if not chars[ch_y][ch_x] then 
@@ -91,11 +67,11 @@ end
 
 --попросим пользователя внести начальные данные
 function userInput(l)
-	field[l][23]={}
-	field[l][23][23]=1
-	field[l][23][23]=1
-	field[l][23][23]=1
-	field[l][22][23]=1
+	field[l][23][23]=1 field[l][23][24]=1 field[l][22][25]=1 field[l][24][25]=1 field[l][24][24]=1
+
+  field[r][23][23]=1 field[r][23][24]=1 field[r][22][25]=1 field[r][24][25]=1 field[r][24][24]=1
+	screen[l][23][23]=1 screen[l][23][24]=1 screen[l][23][23]=1 screen[l][23][23]=1 screen[l][23][23]=1 
+	
     return 'получили данные'
 end
 
@@ -104,12 +80,12 @@ local function getAdjoining(n,ns)
 local yl, yr = 1,1
     if n > 1 and n < ns then 
         yl=n-1 
-        yr=n+n-1 
+        yr=n+1 
     else
-        if n== 1 then 
-            yl, yr = ys, n+1
+        if n == 1 then 
+            yl, yr = ns, n+1
         else 
-            yl,yr = n-1, n-1 
+            yl,yr = n-1, 1 
         end 
     end
     return yl,yr
@@ -131,13 +107,11 @@ end
 
 --сохраняем первичный список состояний узлов
 local function saveChanges()--получаем имя таблицы
-screen[l]={}
-for y=1,ys do screen[l][y]={} end
 for y in pairs(field[l])do
-   yl,yr = getAdjoining(y,ys)
+   local yl,yr = getAdjoining(y,ys)
     for x in pairs(field[l])do 
         if field[l][y][x] == 1 then 
-            xl,xr = getAdjoining(x,xs)
+            local xl,xr = getAdjoining(x,xs)
             setScreen(yl,y,yr,xl,x,xr,l)
         end 
     end
@@ -162,17 +136,17 @@ function whatNews(l,r)--left and right sides
     screen[r]={}
     actualScreenChanges={}
     for y=1,ys do 
-    	screen[r][y]={} 
+    	screen[r][y]={}
 		actualScreenChanges[y]={}
     end
     --получаем из левого экрана сведения о узлах 
     --реалии которых нам интересны 
     for y in pairs (screen[l]) do 
-        yl,yr=getAdjoining(y,ys)
+        local yl,yr=getAdjoining(y,ys)
         for x in pairs(screen[l][y]) do 
-            xl,xr=getAdjoining(x,xs)
-            if not field[l][yl] then field[l][yl]={}end
-            if not field[l][yr]then field[l][yr]={}end
+            local xl,xr=getAdjoining(x,xs)
+            --if not field[l][yl] then field[l][yl]={}end
+            --if not field[l][yr]then field[l][yr]={}end
             neighbors = 
             (field[l][y][xl] or 0) + (field[l][y][x] or 0)+ (field[l][y][xr] or 0)+ 
             (field[l][yl][xl] or 0) + (field[l][yl][x] or 0) + (field[l][yl][xr] or 0)+
@@ -182,6 +156,8 @@ function whatNews(l,r)--left and right sides
                 field[r][y][x]=1
                 if field[l][y][x]==0 then
                 	--узел ожил
+                    --print('new dot'..y..' '..x)
+                    dots=dots+1
                 	actualScreenChanges[y][x]=1
                 end
             else 
@@ -190,12 +166,14 @@ function whatNews(l,r)--left and right sides
                     field[r][y][x]=0
                     if field[l][y][x]==1 then
                     	--узел погиб
+                        --print ('dying dot'..y..' '..x)
+                        dots=dots-1
                     	actualScreenChanges[y][x]=-1
                     end
                 end 
             end 
         end 
-        if actualScreenChanges[y]=={} then actualScreenChanges[y]=nil end
+        if #actualScreenChanges[y]==0 then actualScreenChanges[y]=nil end
     end
     --вычисления следующего состояния колонии завершены
     return 'calculations completed'
@@ -208,10 +186,11 @@ function showMustGoOne()
 	--а за тем избавимся от пустых фрагментов (0x2800)
 	for y in pairs(chars)do
 		for x in pairs(chars[y])do
-			gpu.set(x,y,unicode.char(10240+chars[y][x]))
+      a=unicode.char(10240+chars[y][x])
+			gpu.set(x,y,a)
 		end
 	end
-    return 'обновления успешно отображены'
+  return 'обновления успешно отображены'
 end
 ---для перехода к следующему витку поменяем ссылки на левое и правое
 function swap()
@@ -234,11 +213,18 @@ userInput(l)
 saveChanges()
 
 ---создадим цикл, чтобы всё работало
+
 while allOK() do 
+    --print('whatsUP?')
     whatNews(l,r)
-    toUnicode(r,l)
+    --print('can I convert it to unicode?')
+    toUnicode()
+    --print('show me, baby')
     showMustGoOne()
     swap()
+    gpu.set(1,1,tostring(iter)..' '..tostring(dots)..' ')
+    iter=iter+1
+    os.sleep(0.1)
 end
 
 --В итоге у нас получилась довольно симпатичная програмка
