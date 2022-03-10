@@ -13,7 +13,9 @@
 local unicode=require('unicode')
 local gpu=require('component').gpu
 local os=require('os')
-local xs, ys = 248, 248
+local xs, ys = gpu.getResolution()
+xs=xs*2
+ys=ys*4-2
 local iter=0
 local dots=5
 
@@ -24,19 +26,21 @@ local field, screen, actualScreenChanges,chars = {},{},{},{}
 --actualScreenChanges представляет собой список узлов
 --сменивших своё состояние в течении текущей итерации.
 --проинициируем все узлы таблиц в field и таблицы в screen
-field.right,field.left,screen.left,screen.right = {},{},{},{}
+screen.left,screen.right = {},{}
 local l,r = 'left','right'
 local function tablesInit()
 	for y = 1,ys do 
-	    field[r][y] = {} field[l][y] = {}
+	    field[y] = {}
         screen[l][y] = {} screen[r][y] = {}
 	    for x=1, xs do 
-	        field[r][y][x] = 0
-	        field[l][y][x] = 0
+	        field[y][x] = 0
 	    end
 	end
 	local ch_y=(ys-ys%4)/4
-	for y=1,ch_y do chars[y]={}end
+	local ch_x=xs-xs%4)/2
+	for y=1,ch_y do chars[y]={}
+	    for x=1,ch_x do chars[y][x]=0x2800
+	    end
 	return 'tadaaa'
 end
 
@@ -46,9 +50,6 @@ local bits = {1,8,2,16,4,32,64,128}
 function toUnicode()
 	for y in pairs(actualScreenChanges) do
 		local ch_y=(y-y%4)/4+1
-		if not chars[ch_y] then
-			chars[ch_y]={}
-		end
 		for x in pairs(actualScreenChanges) do
 			local ch_x=(x-x%2)/2+1
 			--единица равна сету, используется or
@@ -67,10 +68,7 @@ end
 
 --попросим пользователя внести начальные данные
 function userInput(l)
-	field[l][23][23]=1 field[l][23][24]=1 field[l][22][25]=1 field[l][24][25]=1 field[l][24][24]=1
-
-  field[r][23][23]=1 field[r][23][24]=1 field[r][22][25]=1 field[r][24][25]=1 field[r][24][24]=1
-	screen[l][23][23]=1 screen[l][23][24]=1 screen[l][23][23]=1 screen[l][23][23]=1 screen[l][23][23]=1 
+	field[23][23]=1 field[23][24]=1 field[22][25]=1 field[24][25]=1 field[24][24]=1
 	
     return 'получили данные'
 end
@@ -107,10 +105,10 @@ end
 
 --сохраняем первичный список состояний узлов
 local function saveChanges()--получаем имя таблицы
-for y in pairs(field[l])do
+for y in pairs(field)do
    local yl,yr = getAdjoining(y,ys)
-    for x in pairs(field[l])do 
-        if field[l][y][x] == 1 then 
+    for x in pairs(field[y])do 
+        if field[y][x] == 1 then 
             local xl,xr = getAdjoining(x,xs)
             setScreen(yl,y,yr,xl,x,xr,l)
         end 
@@ -145,37 +143,39 @@ function whatNews(l,r)--left and right sides
         local yl,yr=getAdjoining(y,ys)
         for x in pairs(screen[l][y]) do 
             local xl,xr=getAdjoining(x,xs)
-            --if not field[l][yl] then field[l][yl]={}end
-            --if not field[l][yr]then field[l][yr]={}end
             neighbors = 
-            (field[l][y][xl] or 0) + (field[l][y][x] or 0)+ (field[l][y][xr] or 0)+ 
-            (field[l][yl][xl] or 0) + (field[l][yl][x] or 0) + (field[l][yl][xr] or 0)+
-            (field[l][yr][xl] or 0) + (field[l][yr][x] or 0) + (field[l][yr][xr] or 0) 
+            field[y][xl] + field[y][x]+ field[y][xr] + 
+            field[yl][xl] + field[yl][x] + field[yl][xr] +
+            field[yr][xl] + field[yr][x] + field[yr][xr]
             if neighbors == 3 then 
-                setScreen(yl,y,yr,xl,x,xr,r)
-                field[r][y][x]=1
-                if field[l][y][x]==0 then
+                if field[y][x]==0 then
+                    setScreen(yl,y,yr,xl,x,xr,r)
                 	--узел ожил
-                    --print('new dot'..y..' '..x)
                     dots=dots+1
                 	actualScreenChanges[y][x]=1
                 end
             else 
                 if neighbors ~= 2 then 
-                    setScreen(yl,y,yr,xl,x,xr,r)
-                    field[r][y][x]=0
-                    if field[l][y][x]==1 then
+                    if field[y][x]==1 then
+                        setScreen(yl,y,yr,xl,x,xr,r)
                     	--узел погиб
-                        --print ('dying dot'..y..' '..x)
                         dots=dots-1
                     	actualScreenChanges[y][x]=-1
                     end
                 end 
             end 
         end 
-        if #actualScreenChanges[y]==0 then actualScreenChanges[y]=nil end
+        --if #actualScreenChanges[y]==0 then 
+        --    actualScreenChanges=nil 
+        --end
     end
     --вычисления следующего состояния колонии завершены
+    --произведём имплементацию изменений
+    for y in pairs(actualScreenChanges) do
+        for x in pairs(actualScreenChanges[y]) do
+            field[y][x]=field[y][x]+actualScreenChanges[y][x]
+        end
+    end
     return 'calculations completed'
 end
 
@@ -186,7 +186,7 @@ function showMustGoOne()
 	--а за тем избавимся от пустых фрагментов (0x2800)
 	for y in pairs(chars)do
 		for x in pairs(chars[y])do
-      a=unicode.char(10240+chars[y][x])
+      a=unicode.char(chars[y][x])
 			gpu.set(x,y,a)
 		end
 	end
@@ -211,7 +211,6 @@ tablesInit()
 userInput(l)
 --записываем полученные данные в мониторинг посредством screen
 saveChanges()
-
 ---создадим цикл, чтобы всё работало
 
 while allOK() do 
@@ -222,7 +221,7 @@ while allOK() do
     --print('show me, baby')
     showMustGoOne()
     swap()
-    gpu.set(1,1,tostring(iter)..' '..tostring(dots)..' ')
+    gpu.set(1,ys,tostring(iter)..' '..tostring(dots)..' ')
     iter=iter+1
     os.sleep(0.1)
 end
