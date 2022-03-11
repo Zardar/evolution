@@ -77,7 +77,7 @@ function toUnicode()
 	return true
 end
 
---попросим пользователя внести начальные данные
+--попросим пользователя внести начальные данные.
 function userInput(l)
 	field[23][23]=1 field[23][24]=1 field[22][25]=1 field[24][25]=1 field[24][24]=1
 	
