@@ -22,6 +22,7 @@ events.drag='touch'
 events.drop='touch'
 events.key_down='keyDown'
 screen.left,screen.right = {},{}
+
 --перехват ивентов. надстройка над ОС
 function computer.pullSignal(...)
     local e={pullSignal(...)}
