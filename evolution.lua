@@ -1,15 +1,3 @@
---Алгоритм 'Эволюция' придумал John Horton Conway
---Всех заинтересованных в подробностях отправляю в вики.
---На днях, при просмотре раздела 'игры' местного форума',
---взгляд мой натолкнулся на тему с его реализацией.
---Сам код предоставленный в ней я подробно не рассматривал,
---но идея воплотить давнишние размышления в код вспыхнула.
---Ниже будет расположено моё решение этого алгоритма
---в рамках языка lua, среда Open Computers 1.7.5
-
---Проинициируем массивы. они будут носить заданный размер 248*248
---Этот размер связан исключительно с удобством вывода на экран
---почти максимального поля и, возмоно, инфопанели
 local computer=require('computer')
 local unicode = require('unicode')
 local gpu = require('component').gpu
@@ -17,29 +5,29 @@ local term = require('term')
 local os = require('os')
 local text = ''
 local x_dim, y_dim = gpu.getResolution()
-local iter = 0
-local dots = 0
-local changes = 0
-local neighbors = 0
-local field, screen, actualScreenChanges,chars = {},{},{},{}
+local iter, dots, changes, neighbors = 0, 0, 0, 0
 local l,r = 'left','right'
 local pullSignal=computer.pullSignal
-local events = {}
-events.new ={touch='touch',drag='drag',drop='drop'}
+local field, screen, actualScreenChanges={},{},{}
+local events, chars, actions = {},{},{}
 local user_draw={unicode.char(0x2800),unicode.char(0x28ff)}
-local mode = ''
+local scroll_x=xs/2-x_dim/4
+local scroll_y=ys/4-y_dim/2
+local setDots=unicode.char(0x28ff)..unicode.char()
+local xs=x_dim*2
+local ys=y_dim*4-8
+local mode='edit'
+events.touch='touch'
+events.drag='touch'
+events.drop='touch'
+events.key_down='keyDown'
 screen.left,screen.right = {},{}
-xs = x_dim*2
-ys = y_dim*4-8
-
 --перехват ивентов. надстройка над ОС
 function computer.pullSignal(...)
     local e={pullSignal(...)}
-    for event in pairs(events.new)do 
-        if event==e[1] then
-            return events[event](e)
+        if events[e[1]] then
+            return events[e[1]](e)
         end
-    end
     return table.unpack(e) 
 end
 
@@ -67,12 +55,6 @@ function events.touch(e)
     local c=e[5]+1
     return userSet(y,x,c)
 end
-function events.drag(e)
-    return events.touch(e)
-end
-function events.drop(e)
-    return events.touch(e)
-end
 
 
 --field содержит опорную информацию о поле для вычислений
@@ -80,6 +62,29 @@ end
 --прявить пристальное внимание и выяснить их дальнейшую судьбу
 --actualScreenChanges представляет собой список узлов
 --сменивших своё состояние в течении текущей итерации.
+=======
+actions.s=function()
+    --stop
+    end
+actions.p=function()
+    --play
+    end
+actions.e=function()
+    --exit menu
+    end
+function events.keyDown(e)
+    local key=string.lower(string.char(e[4]))
+        if actions[key] then
+            actions[key]()
+        end
+    return (e)
+end
+        
+function touch(e)
+    
+    
+    end
+
 --проинициируем все узлы таблиц в field и таблицы в screen
 local function tablesInit()
 	for y = 1,ys do 
@@ -105,18 +110,17 @@ local bits = {1,8,2,16,4,32,64,128}
 --попробуем описать трансформацию значений массива в шрифт брайля
 function toUnicode()
 	for y in pairs(actualScreenChanges) do
-		local ch_y = math.floor((y-y%4)/4)+1--1,
-		for x in pairs(actualScreenChanges[y]) do
-			local ch_x = math.floor((x-x%2)/2)+1
-			--единица равна сету, используется or
-			--ноль равен войду, используется and
-			chars[ch_y][ch_x] = chars[ch_y][ch_x]+bits[(y%4)*2+x%2+1]*actualScreenChanges[y][x]
+        local ch_y=math.floor((y-y%4)/4)+1
+        for x in pairs(actualScreenChanges) do
+            local ch_x=math.floor((x-x%2)/2)+1
+			print (actualScreenChanges[y][x])
+			chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[(y%4)*2+x%2+1]*actualScreenChanges[y][x]
 		end
 	end
 	return showMustGoOne()
 end
 
---попросим пользователя внести начальные данные
+--попросим пользователя внести начальные данные.
 function userInput()
     mode = 'edit'
     gpu.set(1,y_dim,'play')
@@ -166,26 +170,17 @@ function saveChanges()--получаем имя таблицы
             end 
         end
     end
---вопросом у нас помечены все узлы, где
---в следующий цикл будут произведены проверки
+--вопросом у нас помечены подозрительные узлы
 return toUnicode()
 end
+
 function goToPlay()
     mode = 'play'
     term.clear()
     gpu.set(40,y_dim,'STOP')
     return saveChanges()
 end
---теперь попробуем произвести вычисления
---определяющие состояние поля в следующей итерации.
---для этого нам понадобится пройти по таблице screen,
---соотнести значения данных в ней с ячейками 
---обсчитываемого поля и сохранить изменения.
---на данный момент у на есть:
---1.поле, содержащее состояние всех узлов.
---2.зеркальное поле, в которое будут внесены изменения.
---3.таблица-указатель, на основе которой произойдут рассчёты.
---4.пустая таблица-указатель
+--поиск узлов которые сменят состояние
 function whatNews(l,r)--left and right sides
     changes = 0
     for y=1,ys do 
@@ -222,9 +217,6 @@ function whatNews(l,r)--left and right sides
                 end 
             end 
         end 
-        --if #actualScreenChanges[y]==0 then 
-        --    actualScreenChanges=nil 
-        --end
     end
     --вычисления следующего состояния колонии завершены
     --произведём имплементацию изменений
@@ -236,17 +228,15 @@ function whatNews(l,r)--left and right sides
     return toUnicode()
 end
 
---выведем изменения на монитор
-function showMustGoOne()
-    --show news on screen
     --теперь выведем на экран символы брайля
-	--а за тем избавимся от пустых фрагментов (0x2800)
+function showMustGoOne()
 	for y in pairs(chars)do
 		for x in pairs(chars[y])do
             a = unicode.char(chars[y][x])
             gpu.set(x,y,a)
 		end
-	end  return iteration()
+	end 
+  return 'set complete'
 end
 ---для перехода к следующему витку поменяем ссылки на левое и правое
 function swap()
@@ -277,7 +267,17 @@ tablesInit()
 function main()
 while allOK() do 
     whatNews(l,r)
-end
+    --print('can I convert it to unicode?')
+    toUnicode()
+    --print('show me, baby')
+    showMustGoOne()
+    --swap screens
+    swap()
+    --show iteration info
+    gpu.set(1,ys,tostring(iter)..' '..tostring(dots)..' ')
+    iter=iter+1
+    --a little wait for OS
+    os.sleep(0.05)
 end
 
 main()
@@ -285,4 +285,4 @@ main()
 --Возможно, в будущем я найду интерес и время
 --чтобы дописать вывод на экран и реализовать интерактивность
 --Пока же оставляю код в его настоящем виде
---и предоставляю к осмотру заинтересованной публикой.
+--и предоставляю к осмотру заинтересованной публикой
