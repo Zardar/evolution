@@ -1,33 +1,51 @@
---Алгоритм 'Эволюция' придумал John Horton Conway
---Всех заинтересованных в подробностях отправляю в вики.
---На днях, при просмотре раздела 'игры' местного форума',
---взгляд мой натолкнулся на тему с его реализацией.
---Сам код предоставленный в ней я подробно не рассматривал,
---но идея воплотить давнишние размышления в код вспыхнула.
---Ниже будет расположено моё решение этого алгоритма
---в рамках языка lua, среда Open Computers 1.7.5
 
---Проинициируем массивы. они будут носить заданный размер 248*248
---Этот размер связан исключительно с удобством вывода на экран
---почти максимального поля и, возмоно, инфопанели
 local unicode=require('unicode')
 local gpu=require('component').gpu
 local os=require('os')
-local xs, ys = gpu.getResolution()
-xs=xs*2
-ys=ys*4-2
+local computer=require('computer')
+local x_dim, y_dim = gpu.getResolution()
 local iter=0
-local dots=5
-
-local field, screen, actualScreenChanges,chars = {},{},{},{}
---field содержит опорную информацию о поле для вычислений
---screen содержит перечень узлов field, к которым необходимо
---прявить пристальное внимание и выяснить их дальнейшую судьбу
---actualScreenChanges представляет собой список узлов
---сменивших своё состояние в течении текущей итерации.
---проинициируем все узлы таблиц в field и таблицы в screen
-screen.left,screen.right = {},{}
+local dots=0
+local mode='edit'
+local events={}
+local scroll_x=xs/2-x_dim/4
+local scroll_y=ys/4-y_dim/2
+local setDots=unicode.char(0x28ff)..unicode.char()
 local l,r = 'left','right'
+local neighbors = 0
+screen.left,screen.right = {},{}
+xs=x_dim*2
+ys=y_dim*4-8
+
+events.touch='touch'
+events.drag='touch'
+events.drop='touch'
+events.key_down='keyDown'
+actions={}
+actions.s=function()
+    --stop
+    end
+actions.p=function()
+    --play
+    end
+actions.e=function()
+    --exit menu
+    end
+function keyDown(e)
+    local key=string.lower(string.char(e[4]))
+        if actions[key] then
+            actions[key]()
+        end
+    return (e)
+end
+        
+function touch(e)
+    
+    
+    end
+ 
+
+--проинициируем все узлы таблиц в field и таблицы в screen
 local function tablesInit()
 	for y = 1,ys do 
 	    field[y] = {}
@@ -49,16 +67,9 @@ local bits = {1,8,2,16,4,32,64,128}
 --попробуем описать трансформацию значений массива в шрифт брайля
 function toUnicode()
 	for y in pairs(actualScreenChanges) do
-		local ch_y=(y-y%4)/4+1
-		for x in pairs(actualScreenChanges) do
-			local ch_x=(x-x%2)/2+1
-			--единица равна сету, используется or
-			--ноль равен войду, используется and
-			if not chars[ch_y][ch_x] then 
-				chars[ch_y][ch_x]=0
-			end
-			print (bits[(y%4)*2+x%2+1])
-			print (chars[ch_y][ch_x])
+        local ch_y=math.floor((y-y%4)/4)+1
+        for x in pairs(actualScreenChanges) do
+            local ch_x=math.floor((x-x%2)/2)+1
 			print (actualScreenChanges[y][x])
 			chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[(y%4)*2+x%2+1]*actualScreenChanges[y][x]
 		end
@@ -114,25 +125,11 @@ for y in pairs(field)do
         end 
     end
 end
---вопросом у нас помечены все узлы, где
---в следующий цикл будут произведены проверки
+--вопросом у нас помечены подозрительные узлы
 return 'addition complite'
 end
-
---теперь попробуем произвести вычисления
---определяющие состояние поля в следующей итерации.
---для этого нам понадобится пройти по таблице screen,
---соотнести значения данных в ней с ячейками 
---обсчитываемого поля и сохранить изменения.
---на данный момент у на есть:
---1.поле, содержащее состояние всех узлов.
---2.зеркальное поле, в которое будут внесены изменения.
---3.таблица-указатель, на основе которой произойдут рассчёты.
---4.пустая таблица-указатель
+--поиск узлов которые сменят состояние
 function whatNews(l,r)--left and right sides
-    local neighbors = 0
-    screen[r]={}
-    actualScreenChanges={}
     for y=1,ys do 
     	screen[r][y]={}
 		actualScreenChanges[y]={}
@@ -165,9 +162,6 @@ function whatNews(l,r)--left and right sides
                 end 
             end 
         end 
-        --if #actualScreenChanges[y]==0 then 
-        --    actualScreenChanges=nil 
-        --end
     end
     --вычисления следующего состояния колонии завершены
     --произведём имплементацию изменений
@@ -179,18 +173,15 @@ function whatNews(l,r)--left and right sides
     return 'calculations completed'
 end
 
---выведем изменения на монитор
-function showMustGoOne()
-    --show news on screen
     --теперь выведем на экран символы брайля
-	--а за тем избавимся от пустых фрагментов (0x2800)
+function showMustGoOne()
 	for y in pairs(chars)do
 		for x in pairs(chars[y])do
-      a=unicode.char(chars[y][x])
+        a=unicode.char(chars[y][x])
 			gpu.set(x,y,a)
 		end
 	end
-  return 'обновления успешно отображены'
+  return 'set complete'
 end
 ---для перехода к следующему витку поменяем ссылки на левое и правое
 function swap()
@@ -220,14 +211,11 @@ while allOK() do
     toUnicode()
     --print('show me, baby')
     showMustGoOne()
+    --swap screens
     swap()
+    --show iteration info
     gpu.set(1,ys,tostring(iter)..' '..tostring(dots)..' ')
     iter=iter+1
-    os.sleep(0.1)
+    --a little wait for OS
+    os.sleep(0.05)
 end
-
---В итоге у нас получилась довольно симпатичная програмка
---Возможно, в будущем я найду интерес и время
---чтобы дописать вывод на экран и реализовать интерактивность
---Пока же оставляю код в его настоящем виде
---и предоставляю к осмотру заинтересованной публикой.
