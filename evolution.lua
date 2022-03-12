@@ -17,6 +17,7 @@ local setDots=unicode.char(0x28ff)..unicode.char()
 local xs=x_dim*2
 local ys=y_dim*4-8
 local mode='edit'
+
 events.touch='touch'
 events.drag='touch'
 events.drop='touch'
