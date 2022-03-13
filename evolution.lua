@@ -11,12 +11,13 @@ local pullSignal = computer.pullSignal
 local field, screen, actualScreenChanges = {},{},{}
 local chars, actions = {},{}
 local user_draw = {unicode.char(0x2800),unicode.char(0x28ff)}
-local scroll_x = xs/2-x_dim/4--задел на тот случай
-local scroll_y = ys/4-y_dim/2--если решу добавить скроллинг
-local xs = x_dim*2--размер по х в точках символов брайля
-local ys = y_dim*4-8--по у
+local scroll_x = xs/2 - x_dim/4 --задел на тот случай
+local scroll_y = ys/4 - y_dim/2 --если решу добавить скроллинг
+local xs = x_dim*2 --размер по х в точках символов брайля
+local ys = y_dim*4-8 --по у
 local mode = 'edit'--текущее состояние
 local events = {touch='touch',drag='touch',drop='touch',key_up='keyUp'}
+local time, t = os.time(), 0
 screen.left,screen.right = {},{}
 
 -----
@@ -34,52 +35,54 @@ function computer.pullSignal(...)
     return table.unpack(e) 
 end
 
-function userSet(y,x,c)
+--1touch 2addres 3x 4y 5 0or1 = LorR
+--user draws on screen
+function events.touch(e)
+    if mode ~= 'edit' then return (e) end
+    local x = (e[3]-e[3]%2)/2
+    local y = e[4]
+    field[y+scrool_y][x+scroll_x] = e[5]
+    local c = e[5]+1
     local txt = user_draw[c]..user_draw[c]
     gpu.set(x*2,y,txt)
     return true
 end
 
---1touch 2addres 3x 4y 5 0or1 = LorR
-function events.touch(e)
-    local x = (e[3]-e[3]%2)/2
-    local y = e[4]
-    if mode == 'play' then 
-        if x < 45 and x>39 and y > y_dim-1 then
-            return userInput()
-        else
-            return 'showMustGoOne'
-        end
-    end
-    if x < 6 and y > y_dim-1 then 
-        return goToPlay()
-    end
-    field[y][x] = e[5]
-    local c = e[5]+1
-    return userSet(y,x,c)
-end
-
-actions.s=function()
+--actions by key_up
+actions.s=function(e)
     --stop
+    mode='stop'
+    return e
     end
-actions.p=function()
+actions.p=function(e)
     --play
+    mode='play
+    return e
     end
-actions.e=function()
-    --exit menu
+actions.e=function(e)
+    --edit
+    mode='edit'
+    return e
     end
-function events.keyDown(e)
+actions.t=function(e)
+    --tetminate
+    mode='terminate'
+    return e
+    end
+
+function events.keyUp(e)
     local key=string.lower(string.char(e[4]))
         if actions[key] then
-            actions[key]()
+            return actions[key](e)
         end
-    return (e)
+    return e
 end
-        
-function touch(e)
-    
-    
-    end
+
+function priehali()
+ mode='stop'
+ text='Игра окончена'
+
+
 
 --проинициируем все узлы таблиц в field и таблицы в screen
 local function tablesInit()
@@ -127,7 +130,7 @@ function userInput()
     return true
 end
 
---функция вычисления координат прилегающих клеток
+--вычисление координат прилегающих клеток
 function getAdjoining(n,ns)
 local yl, yr = 1,1
     if n > 1 and n < ns then 
@@ -143,7 +146,7 @@ local yl, yr = 1,1
     return yl,yr
 end
 
---здесь создаются целеуказания для проверок напряжений узлов
+--обозначим соседей узлов сменивших состояние
 function setScreen(yl,y,yr,xl,x,xr,s)
     screen[s][yl][x] = '?'
     screen[s][y][x] = '?'
@@ -157,9 +160,9 @@ function setScreen(yl,y,yr,xl,x,xr,s)
 return 'completed'
 end
 
---сохраняем первичный список состояний узлов
+--активация списков экрана узлов и соседей
 function saveChanges()--получаем имя таблицы
-    for y in pairs(field)do
+    for y in pairs(field) do
        local yl,yr = getAdjoining(y,ys)
         for x in pairs(field[y])do 
             if field[y][x] == 1 then 
@@ -170,7 +173,6 @@ function saveChanges()--получаем имя таблицы
             end 
         end
     end
---вопросом у нас помечены подозрительные узлы
 return toUnicode()
 end
 
@@ -180,6 +182,7 @@ function goToPlay()
     gpu.set(40,y_dim,'STOP')
     return saveChanges()
 end
+
 --поиск узлов которые сменят состояние
 function whatNews(l,r)--left and right sides
     changes = 0
@@ -200,10 +203,10 @@ function whatNews(l,r)--left and right sides
             if neighbors == 3 then 
                 if field[y][x] == 0 then
                     setScreen(yl,y,yr,xl,x,xr,r)
-                	--узел ожил
+                    --узел ожил
                     dots = dots+1
                     changes=changes+1
-                	actualFieldChanges[y][x] = 1
+                    actualFieldChanges[y][x] = 1
                 end
             else 
                 if neighbors ~= 2 then 
@@ -225,10 +228,13 @@ function whatNews(l,r)--left and right sides
             field[y][x] = field[y][x] + actualFieldChanges[y][x]
         end
     end
-    return toUnicode()
+    if changes == 0 then
+        return toUnicode()
+    else
+        return priehali()
 end
 
-    --теперь выведем на экран символы брайля
+--теперь выведем на экран символы брайля
 function showMustGoOne()
 	for y in pairs(chars)do
 		for x in pairs(chars[y])do
@@ -238,6 +244,7 @@ function showMustGoOne()
 	end 
   return 'set complete'
 end
+
 ---для перехода к следующему витку поменяем ссылки на левое и правое
 function swap()
     l,r = r,l
@@ -246,12 +253,14 @@ end
 
 --здесь мы проверяем не надоело ли пользователю лицезреть эволюцию
 function allOK()
-    local status = true 
-    if mode == 'edit' then status = false end
-    return status
+    if mode == 'play' then return true end
+    return false
 end
+--вывод инфо. Число точек, циклов
 function iteration()
-    text = tostring(iter)..' '..tostring(dots)..' '
+    t=os.time()
+    text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..' calc.time:'..t-time
+    time=t
     gpu.set(8,y_dim,text)
     if dots == 0 then return true end
     iter = iter+1
