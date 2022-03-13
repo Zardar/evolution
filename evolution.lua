@@ -1,4 +1,4 @@
-local computer=require('computer')
+local computer = require('computer')
 local unicode = require('unicode')
 local gpu = require('component').gpu
 local term = require('term')
@@ -7,26 +7,27 @@ local text = ''
 local x_dim, y_dim = gpu.getResolution()
 local iter, dots, changes, neighbors = 0, 0, 0, 0
 local l,r = 'left','right'
-local pullSignal=computer.pullSignal
-local field, screen, actualScreenChanges={},{},{}
-local events, chars, actions = {},{},{}
-local user_draw={unicode.char(0x2800),unicode.char(0x28ff)}
-local scroll_x=xs/2-x_dim/4
-local scroll_y=ys/4-y_dim/2
-local setDots=unicode.char(0x28ff)..unicode.char()
-local xs=x_dim*2
-local ys=y_dim*4-8
-local mode='edit'
-
-events.touch='touch'
-events.drag='touch'
-events.drop='touch'
-events.key_down='keyDown'
+local pullSignal = computer.pullSignal
+local field, screen, actualScreenChanges = {},{},{}
+local chars, actions = {},{}
+local user_draw = {unicode.char(0x2800),unicode.char(0x28ff)}
+local scroll_x = xs/2-x_dim/4--задел на тот случай
+local scroll_y = ys/4-y_dim/2--если решу добавить скроллинг
+local xs = x_dim*2--размер по х в точках символов брайля
+local ys = y_dim*4-8--по у
+local mode = 'edit'--текущее состояние
+local events = {touch='touch',drag='touch',drop='touch',key_up='keyUp'}
 screen.left,screen.right = {},{}
+
+-----
+--field содержит опорную информацию о поле для вычислений
+--screen[l] содержит перечень проверяемых узлов field
+--actualFieldChanges принимает изменения field
+-----
 
 --перехват ивентов. надстройка над ОС
 function computer.pullSignal(...)
-    local e={pullSignal(...)}
+    local e = {pullSignal(...)}
         if events[e[1]] then
             return events[e[1]](e)
         end
@@ -34,15 +35,15 @@ function computer.pullSignal(...)
 end
 
 function userSet(y,x,c)
-    local txt=user_draw[c]..user_draw[c]
+    local txt = user_draw[c]..user_draw[c]
     gpu.set(x*2,y,txt)
     return true
 end
 
 --1touch 2addres 3x 4y 5 0or1 = LorR
 function events.touch(e)
-    local x=(e[3]-e[3]%2)/2
-    local y=e[4]
+    local x = (e[3]-e[3]%2)/2
+    local y = e[4]
     if mode == 'play' then 
         if x < 45 and x>39 and y > y_dim-1 then
             return userInput()
@@ -53,18 +54,11 @@ function events.touch(e)
     if x < 6 and y > y_dim-1 then 
         return goToPlay()
     end
-    field[y][x]=e[5]
-    local c=e[5]+1
+    field[y][x] = e[5]
+    local c = e[5]+1
     return userSet(y,x,c)
 end
 
-
---field содержит опорную информацию о поле для вычислений
---screen содержит перечень узлов field, к которым необходимо
---прявить пристальное внимание и выяснить их дальнейшую судьбу
---actualScreenChanges представляет собой список узлов
---сменивших своё состояние в течении текущей итерации.
-=======
 actions.s=function()
     --stop
     end
@@ -107,16 +101,20 @@ local function tablesInit()
     end    
 	return userInput()   
 end
+
 --опишем биткарту шрифта брайля
-local bits = {1,8,2,16,4,32,64,128}
+local bits = {} 
+bits[1]={1,8,2,16,4,32,64,128}
+bits[-1]={-1,-8,-2,-16,-4,-32,-64,-128}
+
 --попробуем описать трансформацию значений массива в шрифт брайля
 function toUnicode()
-	for y in pairs(actualScreenChanges) do
+	for y in pairs(actualFieldChanges) do
         local ch_y=math.floor((y-y%4)/4)+1
-        for x in pairs(actualScreenChanges) do
+        for x in pairs(actualFieldChanges) do
             local ch_x=math.floor((x-x%2)/2)+1
-			print (actualScreenChanges[y][x])
-			chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[(y%4)*2+x%2+1]*actualScreenChanges[y][x]
+			--print (actualFieldChanges[y][x])
+			chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[actualFieldChanges[y][x]][(y%4)*2+x%2+1]
 		end
 	end
 	return showMustGoOne()
@@ -165,7 +163,7 @@ function saveChanges()--получаем имя таблицы
        local yl,yr = getAdjoining(y,ys)
         for x in pairs(field[y])do 
             if field[y][x] == 1 then 
-                actualScreenChanges[y][x] = 1
+                actualFieldChanges[y][x] = 1
                 dots = dots + 1
                 local xl,xr = getAdjoining(x,xs)
                 setScreen(yl,y,yr,xl,x,xr,l)
@@ -187,7 +185,7 @@ function whatNews(l,r)--left and right sides
     changes = 0
     for y=1,ys do 
     	screen[r][y] = {}
-		actualScreenChanges[y] = {}
+		actualFieldChanges[y] = {}
     end
     --получаем из левого экрана сведения о узлах 
     --реалии которых нам интересны 
@@ -205,7 +203,7 @@ function whatNews(l,r)--left and right sides
                 	--узел ожил
                     dots = dots+1
                     changes=changes+1
-                	actualScreenChanges[y][x] = 1
+                	actualFieldChanges[y][x] = 1
                 end
             else 
                 if neighbors ~= 2 then 
@@ -214,7 +212,7 @@ function whatNews(l,r)--left and right sides
                     	--узел погиб
                         dots = dots-1
                         changes = changes+1
-                    	actualScreenChanges[y][x] = -1
+                    	actualFieldChanges[y][x] = -1
                     end
                 end 
             end 
@@ -222,9 +220,9 @@ function whatNews(l,r)--left and right sides
     end
     --вычисления следующего состояния колонии завершены
     --произведём имплементацию изменений
-    for y in pairs(actualScreenChanges) do
-        for x in pairs(actualScreenChanges[y]) do
-            field[y][x] = field[y][x] + actualScreenChanges[y][x]
+    for y in pairs(actualFieldChanges) do
+        for x in pairs(actualFieldChanges[y]) do
+            field[y][x] = field[y][x] + actualFieldChanges[y][x]
         end
     end
     return toUnicode()
