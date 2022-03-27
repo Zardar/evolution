@@ -11,14 +11,15 @@ local iter, dots, changes, neighbors = 0, 0, 0, 0
 local l,r = 'left','right'
 local pullSignal = computer.pullSignal
 local field, snap, screen, actualFieldChanges = {},{},{},{}
-local chars, actions,preset = {},{},{}
+local chars, actions,presets = {},{},{}
 local user_draw = {unicode.char(0x2800),unicode.char(0x28ff)}
 local scroll_x = xs/2 - x_dim/4 --задел на тот случай
-local scroll_y = ys/4 - y_dim/2 --если решу добавить скроллинг
+local scroll_y = ys/2 - y_dim/2 --если решу добавить скроллинг
 local mode = 'edit'--текущее состояние программы
 local restart = false
 local events = {touch='touch',drag='touch',drop='touch',key_up='keyUp'}
-local time, t = computer.uptime(), 0
+local time = computer.uptime()
+local t = time
 --SPECTR
 local buttons = {'(C)lear  (E)dit  (P)lay  (R)estart  (T)erminate', 
     '(S)top  (P)lay  (C)lear', '(S)top  (R)estart'}
@@ -27,7 +28,6 @@ screen.left,screen.right = {},{}
 local bits = {} 
 bits[1]={1,8,2,16,4,32,64,128}
 bits[-1]={-1,-8,-2,-16,-4,-32,-64,-128}
-
 -----
 --field содержит опорную информацию о поле для вычислений
 --screen[l] содержит перечень проверяемых узлов field
@@ -52,19 +52,21 @@ end
  --   return true
 --end
 
-actions.c=function(e)
+actions.c=function()
     if mode == 'play' then
         return true 
     end
     return tablesInit()
 end
 actions.s=function()
-    --stop
-    mode='stop'
+    --stop=select
     return select()
 end
 actions.p=function()
     --play
+    if mode == 'play' then
+      return true
+    end
     return goToPlay()
 end
 actions.e=function()
@@ -73,7 +75,7 @@ actions.e=function()
     cls_snap()
     return userInput()
   end
-  return e
+  return true
 end
 actions.t=function()
     --tetminate
@@ -86,7 +88,7 @@ actions.t=function()
     return true
 end
 
-actions.r=function(e)
+actions.r=function()
     --restart
     if mode ~= 'select' and mode ~= 'play' then
         return true
@@ -128,20 +130,23 @@ end
 
 function select()
 --вывод clear, edit, play
-mode='select'
-gpu.set(16,y_dim-1,buttons[1])
-return true
+  if mode == 'edit' then
+    saveChanges()
+  end
+  mode='select'
+  gpu.set(16,y_dim-1,buttons[1])
+  return true
 end
 
 function re_start()
-    tablesInit()
-    for y in pairs (snap) do 
-        field[y] = {}
-        for x in pairs (snap[y]) do
-            field[y][x] = snap[y][x]
-        end
-    end
-    return goToPlay()
+  mode = 'restart'
+  tablesInit()
+  for y in pairs (snap) do 
+      for x in pairs (snap[y]) do
+          field[y][x] = snap[y][x]
+      end
+  end
+  return goToPlay()
 end
 ----добавим пресеты
 function loadPreset()
@@ -173,14 +178,17 @@ end
 
 --попробуем описать трансформацию значений массива в шрифт брайля
 function toUnicode()
+  local ch_x,ch_y,yy,xx=0,0,0,0
     for y in pairs(actualFieldChanges) do
-        local ch_y=math.floor((y-y%4)/4)+1
+        ch_y=y+3  yy=y-1
+        ch_y=math.floor((ch_y-ch_y%4)/4)
         for x in pairs(actualFieldChanges[y]) do
-            local ch_x=math.floor((x-x%2)/2)+1
-            --print (actualFieldChanges[y][x])
-            chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[actualFieldChanges[y][x]][(y%4)*2+x%2+1]
+          ch_x=x+1  xx=x-1
+            ch_x=math.floor((ch_x-ch_x%2)/2)
+            chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[actualFieldChanges[y][x]][(yy%4-1)*2+xx%2+1]
         end
     end
+    t=computer.uptime()
     return true
 end
 
@@ -240,19 +248,24 @@ function saveChanges()
         end
     end 
     restart = true
-    return main()
+    return true
 end
 
 --очищаем экран и отправляемся к сохранению
 -- изменений поля в экране
 function goToPlay()
-    mode='play'
     term.clear()
     gpu.set(16,y_dim-1,buttons[3])
-    return saveChanges()
+    if mode == 'edit' or mode == 'restart' then
+      mode = 'play'
+      saveChanges()
+      return main()
+    end
+  return  main()
 end
 --поиск узлов которые сменят состояние
 function whatNews()
+    time = t
     changes = 0
     for y=1,ys do 
         screen[r][y] = {}
@@ -320,21 +333,13 @@ end
 ---для перехода к следующему витку поменяем ссылки на левое и правое
 function swap()
     l,r = r,l
-    if mode == 'play' then
-        return true
-    else
-        return select()
-    end
 end
 
 --вывод инфо. Число точек, циклов
 function iteration()
-    t=computer.uptime()
+    text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..' calc.time:'..t-time..'        '
     if t - time < 1 then os.sleep(1-(t-time)) end
-    text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..' calc.time:'..t-time
-    time=t
     gpu.set(8,y_dim,text)
-    --if dots == 0 then return true end
     iter = iter+1
     os.sleep(0.05)
     return true
@@ -350,17 +355,17 @@ cls_snap()
 tablesInit()
 userInput()
 function main()
-    iter=0
-    toUnicode()
-    showMustGoOne()
-    whatNews()
-    implementDots()
-    while mode=='play' do
-        toUnicode()
-        showMustGoOne()
-        iteration()
-        swap()
-        whatNews()
-        implementDots()
-    end
+  iter=0
+  toUnicode()
+  showMustGoOne()
+  
+  while mode=='play' do
+      whatNews()
+      implementDots()
+      toUnicode()
+      showMustGoOne()
+      iteration()
+      swap()
+  end
+  retrurn true
 end
