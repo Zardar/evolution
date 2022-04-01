@@ -1,3 +1,4 @@
+--programm Evolution. Authot Taoshi (Zardar)
 local computer = require('computer')
 local unicode = require('unicode')
 local gpu = require('component').gpu
@@ -5,8 +6,8 @@ local term = require('term')
 local os = require('os')
 local text,show = '',''
 local x_dim, y_dim = gpu.getResolution()
-local xs = x_dim*2 --размер по х в точках символов брайля
-local ys = y_dim*4-8 --по у
+local xs = x_dim*2-8 --размер по х в точках символов брайля
+local ys = y_dim*4-16 --по у
 local iter, dots, changes, neighbors = 0, 0, 0, 0
 local l,r = 'left','right'
 local pullSignal = computer.pullSignal
@@ -20,19 +21,25 @@ local restart = false
 local events = {touch='touch',drag='touch',drop='touch',key_up='keyUp'}
 local time = computer.uptime()
 local t = time
+
 --SPECTR
-local buttons = {'(C)lear  (E)dit  (P)lay  (R)estart  (T)erminate', 
-    '(S)top  (P)lay  (C)lear', '(S)top  (R)estart'}
+local buttons = {   '(C)lear  (E)dit  (P)lay  (R)estart  (T)erminate', 
+                    '(S)top  (P)lay  (C)lear',
+                    '(S)top  (R)estart'
+                }
 screen.left,screen.right = {},{}
+
 --опишем биткарту шрифта брайля
 local bits = {} 
 bits[1]={1,8,2,16,4,32,64,128}
 bits[-1]={-1,-8,-2,-16,-4,-32,-64,-128}
+
 -----
 --field содержит опорную информацию о поле для вычислений
 --screen[l] содержит перечень проверяемых узлов field
 --actualFieldChanges принимает изменения field
 -----
+
 --перехват ивентов. надстройка над ОС
 function computer.pullSignal(...)
     local e = {pullSignal(...)}
@@ -43,9 +50,11 @@ function computer.pullSignal(...)
 end
 
 -------------------------------------------
+
 --actions by key_up
+
 --actions.l=function(e)
- --   if mode == 'edit' or mode == 'stop' then 
+ --   if mode == 'edit' or mode == 'select' then 
   --      mode = 'preset'
    --     loadPreset()
  --   end 
@@ -60,7 +69,7 @@ actions.c=function()
     return tablesInit()
 end
 actions.s=function()
-    --stop=select
+    --select
     return select()
 end
 actions.p=function()
@@ -88,7 +97,6 @@ actions.t=function()
     computer.pullSignal = pullSignal
     return true
 end
-
 actions.r=function()
     --restart
     if mode ~= 'select' and mode ~= 'play' then
@@ -104,10 +112,13 @@ end
 --user draws on screen
 actions.touch=function(e)
     if mode ~= 'edit' then
-        return (e) 
+        return true
     end 
     local x = (e[3]-e[3]%2)/2
     local y = e[4]
+    if y+2 >= y_dim or e[3]<3 or e[3]+2>=x_dim or y<2 then
+        return true 
+    end
     field[y+scroll_y][x+scroll_x] = e[5]
     local c = e[5]+1
     local txt = user_draw[c]..user_draw[c]
@@ -135,7 +146,7 @@ function select()
     saveChanges()
   end
   mode='select'
-  gpu.set(16,y_dim-1,buttons[1])
+  gpu.set(3,y_dim-1,buttons[1])
   return true
 end
 
@@ -149,6 +160,7 @@ function re_start()
   end
   return goToPlay()
 end
+
 ----добавим пресеты
 function loadPreset()
     --set on screen
@@ -156,6 +168,7 @@ function loadPreset()
     
     
 end
+
 --проинициируем все узлы таблиц в field и таблицы в screen
 function tablesInit()
     for y = 1,ys do 
@@ -177,19 +190,10 @@ function tablesInit()
     return true   
 end
 
---попробуем описать трансформацию значений массива в шрифт брайля
-function toUnicode()
-  local ch_x,ch_y,yy,xx=0,0,0,0
-    for y in pairs(actualFieldChanges) do
-        ch_y=y+3  yy=y-1
-        ch_y=math.floor((ch_y-ch_y%4)/4)
-        for x in pairs(actualFieldChanges[y]) do
-          ch_x=x+1  xx=x-1
-            ch_x=math.floor((ch_x-ch_x%2)/2)
-            chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[actualFieldChanges[y][x]][(yy%4-1)*2+xx%2+1]
-        end
+function cls_snap()
+    for y = 1, ys do
+        snap[y] = {}
     end
-    t=computer.uptime()
     return true
 end
 
@@ -197,7 +201,26 @@ end
 function userInput()
     mode = 'edit'
     term.clear()
-    gpu.set(16,y_dim-1,buttons[2])
+    gpu.set(3,y_dim-1,buttons[2])
+    return true
+end
+
+cls_snap()
+tablesInit()
+userInput()
+
+--попробуем описать трансформацию значений массива в шрифт брайля
+function toUnicode()
+  local ch_x,ch_y,yy,xx=0,0,0,0
+    for y in pairs(actualFieldChanges) do
+        ch_y=y+3  yy=y-1
+        ch_y=math.floor(ch_y/4)
+        for x in pairs(actualFieldChanges[y]) do
+          ch_x=x+1  xx=x-1
+            ch_x=math.floor(ch_x/2)
+            chars[ch_y][ch_x]=chars[ch_y][ch_x]+bits[actualFieldChanges[y][x]][1+(yy%4)*2+xx%2]
+        end
+    end
     return true
 end
 
@@ -230,6 +253,7 @@ function setScreen(yl,y,yr,xl,x,xr,s)
     screen[s][yr][xr] = '?'
 return 'completed'
 end
+
 --активация списков экрана узлов и соседей
 function saveChanges()
     dots = 0
@@ -256,15 +280,17 @@ end
 -- изменений поля в экране
 function goToPlay()
     term.clear()
-    gpu.set(16,y_dim-1,buttons[3])
     if mode == 'edit' or mode == 'restart' then
-      mode = 'play'
-      saveChanges()
-      return main()
+        saveChanges()    
+        iter=0
+        toUnicode()
+        showMustGoOne()
     end
     mode = "play"
-  return  main()
+    gpu.set(3,y_dim-1,buttons[3])
+    return  main()
 end
+
 --поиск узлов которые сменят состояние
 function whatNews()
     time = t
@@ -321,15 +347,18 @@ function implementDots()
         return priehali()
     end
 end
+
 --теперь выведем на экран символы брайля
 function showMustGoOne()
     for y in pairs(chars)do
+        show=''
         for x in pairs(chars[y])do
-            show = unicode.char(chars[y][x])
-            gpu.set(x,y,show)
+            show = show..unicode.char(chars[y][x])    
         end
-    end 
-  return true
+        gpu.set(3,y+1,show)
+    end
+    t=computer.uptime() 
+    return true
 end
 
 ---для перехода к следующему витку поменяем ссылки на левое и правое
@@ -339,27 +368,15 @@ end
 
 --вывод инфо. Число точек, циклов
 function iteration()
-    text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..' calc.time:'..t-time..'        '
-    if t - time < 1 then os.sleep(1-(t-time)) end
+    text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..'    '
+    if t - time < 0.95 then os.sleep(0.95-(t-time)) end
     gpu.set(8,y_dim,text)
     iter = iter+1
     os.sleep(0.05)
     return true
 end
-function cls_snap()
-    for y = 1, ys do
-        snap[y] = {}
-    end
-    return true
-end
---вроде всё готово к началу работы програмки
-cls_snap()
-tablesInit()
-userInput()
+
 function main()
-  iter=0
-  toUnicode()
-  showMustGoOne()
   
   while mode=='play' do
       whatNews()
@@ -369,5 +386,9 @@ function main()
       iteration()
       swap()
   end
-  retrurn true
+  return true
 end
+
+cls_snap()
+tablesInit()
+userInput()
