@@ -56,6 +56,7 @@ actions.c=function()
     if mode == 'play' then
         return true 
     end
+    term.clear()
     return tablesInit()
 end
 actions.s=function()
@@ -261,6 +262,7 @@ function goToPlay()
       saveChanges()
       return main()
     end
+    mode = "play"
   return  main()
 end
 --поиск узлов которые сменят состояние
