@@ -14,8 +14,8 @@ local pullSignal = computer.pullSignal
 local field, snap, screen, actualFieldChanges = {},{},{},{}
 local chars, actions,presets = {},{},{}
 local user_draw = {unicode.char(0x2800),unicode.char(0x28ff)}
-local scroll_x = xs/2 - x_dim/4 --задел на тот случай
-local scroll_y = ys/2 - y_dim/2 --если решу добавить скроллинг
+local scroll_x = math.floor(xs/2 - x_dim/4) --задел на тот случай
+local scroll_y = math.floor(ys/2 - y_dim/2) --если решу добавить скроллинг
 local mode = 'edit'--текущее состояние программы
 local restart = false
 local events = {touch='touch',drag='touch',drop='touch',key_up='keyUp'}
@@ -114,8 +114,8 @@ actions.touch=function(e)
     if mode ~= 'edit' then
         return true
     end 
-    local x = (e[3]-e[3]%2)/2
-    local y = e[4]
+    local x = math.floor(e[3]/2)
+    local y = math.floor(e[4])
     if y+2 >= y_dim or e[3]<3 or e[3]+2>=x_dim or y<2 then
         return true 
     end
@@ -136,7 +136,7 @@ end
 -----------------------------------------------
 function priehali()
   text='Игра окончена'
-  gpu.set(1,y_dim-1,text)
+  gpu.set(20,y_dim,text)
   return select()
 end
 
@@ -179,8 +179,8 @@ function tablesInit()
             field[y][x] = 0
         end
     end
-    local ch_y = (ys-ys%4)/4
-    local ch_x = (xs-xs%4)/2
+    local ch_y = math.floor(ys/4)
+    local ch_x = math.floor(xs/2)
     for y = 1,ch_y do 
         chars[y]={}
         for x = 1,ch_x do 
@@ -369,8 +369,8 @@ end
 --вывод инфо. Число точек, циклов
 function iteration()
     text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..'    '
-    if t - time < 0.95 then os.sleep(0.95-(t-time)) end
-    gpu.set(8,y_dim,text)
+    --if t - time < 0.95 then os.sleep(0.95-(t-time)) end
+    gpu.set(3,y_dim,text)
     iter = iter+1
     os.sleep(0.05)
     return true
