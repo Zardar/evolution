@@ -120,7 +120,7 @@ actions.touch=function(e)
         return true 
     end
     field[y+scroll_y][x+scroll_x] = e[5]
-    local c = e[5]+1
+    local c = math.floor(e[5]+1)
     local txt = user_draw[c]..user_draw[c]
     gpu.set(x*2,y,txt)
     return true
