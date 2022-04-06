@@ -25,9 +25,14 @@ local t = time
 
 --SPECTR
 local buttons = {   '(C)lear  (E)dit  (P)lay  (R)estart  (T)erminate', 
-                    '(S)top  (P)lay  (C)lear',
+                    '(S)top  (P)lay  (C)lear   ПКМ - рисовать,  ЛКМ - стереть',
                     '(S)top  (R)estart'
-                }
+}
+local ru_keys={
+    [1067]='s',[1099]='s',[1057]='c',[1089]='c',
+    [1059]='e',[1091]='e',[1047]='p',[1079]='p',
+    [1050]='r',[1082]='r',[1045]='t',[1077]='t',
+}
 screen.left,screen.right = {},{}
 
 --опишем биткарту шрифта брайля
@@ -153,10 +158,15 @@ actions.touch=function(e)
 end
 
 actions.keyUp=function(e)
-    local key=string.lower(string.char(e[3]))
-        if actions[key] then
-            return actions[key](e)
-        end
+    local key=math.floor(e[3])
+    if key > 128 then
+        key = string.lower(ru_keys[key])
+    else
+        key=string.lower(string.char(key))
+    end
+    if actions[key] then
+        return actions[key](e)
+    end
     return true
 end
 -----------------------------------------------
@@ -210,6 +220,7 @@ end
 function evo.loadPreset()
     --set on screen
     --text of available presets
+
     
     
 end
