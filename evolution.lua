@@ -1,4 +1,5 @@
 --programm Evolution. Authot Taoshi (Zardar)
+local evo={}
 local computer = require('computer')
 local unicode = require('unicode')
 local gpu = require('component').gpu
@@ -33,7 +34,25 @@ screen.left,screen.right = {},{}
 local bits = {} 
 bits[1]={1,8,2,16,4,32,64,128}
 bits[-1]={-1,-8,-2,-16,-4,-32,-64,-128}
-
+--добавим символы для линий и углов
+bits.border={
+    w=54,h1=184,h2=71,tl1=176,tl2=118,tr1=182,
+    tr2=70,br1=62,br2=7,bl1=56,bl2=55
+}
+for f in pairs (bits.border) do
+    bits.border[f]=unicode.char(bits.border[f]+10240)
+end
+bits.line=''
+for f=3,x_dim-2 do
+    bits.line=bits.line..bits.border.w
+end
+bits.border.tl1=bits.border.tl1..bits.border.tl2
+bits.border.tr1=bits.border.tr1..bits.border.tr2
+bits.border.bl1=bits.border.bl1..bits.border.bl2
+bits.border.br1=bits.border.br1..bits.border.br2
+bits.border.h1=bits.border.h1..bits.border.h2
+local buffer = gpu.allocateBuffer(1,1)
+gpu.setActiveBuffer(buffer)
 -----
 --field содержит опорную информацию о поле для вычислений
 --screen[l] содержит перечень проверяемых узлов field
@@ -46,7 +65,7 @@ function computer.pullSignal(...)
         if events[e[1]] then
             return actions[events[e[1]]](e)
         end
-    return table.unpack(e) 
+    return true --table.unpack(e) 
 end
 
 -------------------------------------------
@@ -65,25 +84,28 @@ actions.c=function()
     if mode == 'play' then
         return true 
     end
+    gpu.setActiveBuffer(0)
     term.clear()
-    return tablesInit()
+    evo.border()
+    gpu.setActiveBuffer(buffer)
+    return evo.tablesInit()
 end
 actions.s=function()
     --select
-    return select()
+    return evo.select()
 end
 actions.p=function()
     --play
     if mode == 'play' then
       return true
     end
-    return goToPlay()
+    return evo.goToPlay()
 end
 actions.e=function()
     --edit
     if mode=='select' then
-    cls_snap()
-    return userInput()
+    evo.cls_snap()
+    return evo.userInput()
   end
   return true
 end
@@ -93,8 +115,10 @@ actions.t=function()
         return true
     end
     mode='terminate'
+    gpu.setActiveBuffer(0)
     term.clear()
     computer.pullSignal = pullSignal
+    evo=nil
     return true
 end
 actions.r=function()
@@ -103,7 +127,7 @@ actions.r=function()
         return true
     end
     if restart then
-        return re_start() 
+        return evo.re_start() 
     end
     return true
 end
@@ -122,7 +146,9 @@ actions.touch=function(e)
     field[y+scroll_y][x+scroll_x] = e[5]
     local c = math.floor(e[5]+1)
     local txt = user_draw[c]..user_draw[c]
+    gpu.setActiveBuffer(0)
     gpu.set(x*2,y,txt)
+    gpu.setActiveBuffer(buffer)
     return true
 end
 
@@ -134,35 +160,54 @@ actions.keyUp=function(e)
     return true
 end
 -----------------------------------------------
-function priehali()
-  text='Игра окончена'
-  gpu.set(20,y_dim,text)
-  return select()
+function evo.border()
+    gpu.set(1,1,bits.border.tl1)
+    gpu.set(x_dim-1,1,bits.border.tr1)
+
+    gpu.set(3,1,bits.line)
+    gpu.set(3,y_dim-2,bits.line)
+    for f=3,y_dim-3 do
+        gpu.set(1,f,bits.border.h1)
+        gpu.set(x_dim-1,f,bits.border.h1)
+    end
+    gpu.set(1,y_dim-2,bits.border.bl1)
+    gpu.set(x_dim-1,y_dim-2,bits.border.br1)
+    return true
 end
 
-function select()
+function evo.priehali()
+  text='Игра окончена'
+  gpu.setActiveBuffer(0)
+  gpu.set(20,y_dim,text)
+  gpu.setActiveBuffer(buffer)
+  return evo.select()
+end
+
+function evo.select()
 --вывод clear, edit, play
   if mode == 'edit' then
-    saveChanges()
+    evo.saveChanges()
   end
   mode='select'
+  gpu.setActiveBuffer(0)
   gpu.set(3,y_dim-1,buttons[1])
+  gpu.setActiveBuffer(buffer)
   return true
 end
 
-function re_start()
+function evo.re_start()
   mode = 'restart'
-  tablesInit()
+  evo.tablesInit()
   for y in pairs (snap) do 
       for x in pairs (snap[y]) do
           field[y][x] = snap[y][x]
       end
   end
-  return goToPlay()
+  return evo.goToPlay()
 end
 
 ----добавим пресеты
-function loadPreset()
+function evo.loadPreset()
     --set on screen
     --text of available presets
     
@@ -170,7 +215,7 @@ function loadPreset()
 end
 
 --проинициируем все узлы таблиц в field и таблицы в screen
-function tablesInit()
+function evo.tablesInit()
     for y = 1,ys do 
         field[y] = {}
         actualFieldChanges[y] = {}
@@ -190,7 +235,7 @@ function tablesInit()
     return true   
 end
 
-function cls_snap()
+function evo.cls_snap()
     for y = 1, ys do
         snap[y] = {}
     end
@@ -198,19 +243,18 @@ function cls_snap()
 end
 
 --попросим пользователя внести начальные данные.
-function userInput()
+function evo.userInput()
     mode = 'edit'
+    gpu.setActiveBuffer(0)
     term.clear()
+    evo.border()
     gpu.set(3,y_dim-1,buttons[2])
+    gpu.setActiveBuffer(buffer)
     return true
 end
 
-cls_snap()
-tablesInit()
-userInput()
-
 --попробуем описать трансформацию значений массива в шрифт брайля
-function toUnicode()
+function evo.toUnicode()
   local ch_x,ch_y,yy,xx=0,0,0,0
     for y in pairs(actualFieldChanges) do
         ch_y=y+3  yy=y-1
@@ -225,7 +269,7 @@ function toUnicode()
 end
 
 --вычисление координат прилегающих клеток
-function getAdjoining(n,ns)
+function evo.getAdjoining(n,ns)
 local yl, yr = 1,1
     if n > 1 and n < ns then 
         yl = n-1 
@@ -241,7 +285,7 @@ local yl, yr = 1,1
 end
 
 --обозначим соседей узлов сменивших состояние
-function setScreen(yl,y,yr,xl,x,xr,s)
+function evo.setScreen(yl,y,yr,xl,x,xr,s)
     screen[s][yl][x] = '?'
     screen[s][y][x] = '?'
     screen[s][yr][x] = '?'
@@ -255,20 +299,19 @@ return 'completed'
 end
 
 --активация списков экрана узлов и соседей
-function saveChanges()
+function evo.saveChanges()
     dots = 0
     changes = 0
     for y in pairs(field) do
-       local yl,yr = getAdjoining(y,ys)
+       local yl,yr = evo.getAdjoining(y,ys)
         for x in pairs(field[y])do 
             if field[y][x] == 1 then
                 snap[y][x] = 1
                 actualFieldChanges[y][x] = 1
                 dots = dots + 1
                 changes = changes + 1
-                local xl,xr = getAdjoining(x,xs)
-
-                setScreen(yl,y,yr,xl,x,xr,l)
+                local xl,xr = evo.getAdjoining(x,xs)
+                evo.setScreen(yl,y,yr,xl,x,xr,l)
             end 
         end
     end 
@@ -278,21 +321,26 @@ end
 
 --очищаем экран и отправляемся к сохранению
 -- изменений поля в экране
-function goToPlay()
+function evo.goToPlay()
+    gpu.setActiveBuffer(0)
     term.clear()
+    evo.border()
+    gpu.setActiveBuffer(buffer)
     if mode == 'edit' or mode == 'restart' then
-        saveChanges()    
+        evo.saveChanges()    
         iter=0
-        toUnicode()
-        showMustGoOne()
+        evo.toUnicode()
+        evo.showMustGoOne()
     end
     mode = "play"
+    gpu.setActiveBuffer(buffer)
     gpu.set(3,y_dim-1,buttons[3])
-    return  main()
+    gpu.setActiveBuffer(0)
+    return  evo.main()
 end
 
 --поиск узлов которые сменят состояние
-function whatNews()
+function evo.whatNews()
     time = t
     changes = 0
     for y=1,ys do 
@@ -302,16 +350,16 @@ function whatNews()
     --получаем из левого экрана сведения о узлах 
     --реалии которых нам интересны 
     for y in pairs (screen[l]) do 
-        local yl,yr=getAdjoining(y,ys)
+        local yl,yr=evo.getAdjoining(y,ys)
         for x in pairs(screen[l][y]) do 
-            local xl,xr=getAdjoining(x,xs)
+            local xl,xr=evo.getAdjoining(x,xs)
             neighbors = 
             field[y][xl] + field[y][xr] + 
             field[yl][xl] + field[yl][x] + field[yl][xr] +
             field[yr][xl] + field[yr][x] + field[yr][xr]
             if neighbors == 3 then 
                 if field[y][x] == 0 then
-                    setScreen(yl,y,yr,xl,x,xr,r)
+                    evo.setScreen(yl,y,yr,xl,x,xr,r)
                     --узел ожил
                     dots = dots+1
                     changes=changes+1
@@ -320,7 +368,7 @@ function whatNews()
             else 
                 if neighbors ~= 2 then 
                     if field[y][x] == 1 then
-                        setScreen(yl,y,yr,xl,x,xr,r)
+                        evo.setScreen(yl,y,yr,xl,x,xr,r)
                         --узел погиб
                         dots = dots-1
                         changes = changes+1
@@ -334,7 +382,7 @@ function whatNews()
 end
     --вычисления следующего состояния колонии завершены
     --произведём имплементацию изменений
-function implementDots()
+function evo.implementDots()
     for y in pairs(actualFieldChanges) do
         for x in pairs(actualFieldChanges[y]) do
             field[y][x] = field[y][x] + actualFieldChanges[y][x]
@@ -344,51 +392,56 @@ function implementDots()
         return true
     else
         --за прошедшую итерацию не было изменений
-        return priehali()
+        return evo.priehali()
     end
 end
 
 --теперь выведем на экран символы брайля
-function showMustGoOne()
+function evo.showMustGoOne()
+    gpu.setActiveBuffer(0)
     for y in pairs(chars)do
         show=''
+        
         for x in pairs(chars[y])do
             show = show..unicode.char(chars[y][x])    
         end
         gpu.set(3,y+1,show)
     end
-    t=computer.uptime() 
+    gpu.setActiveBuffer(buffer)
     return true
 end
 
 ---для перехода к следующему витку поменяем ссылки на левое и правое
-function swap()
+function evo.swap()
     l,r = r,l
 end
 
 --вывод инфо. Число точек, циклов
-function iteration()
+function evo.iteration()
     text = 'iter:'..tostring(iter)..' dots:'..tostring(dots)..'    '
     --if t - time < 0.95 then os.sleep(0.95-(t-time)) end
+    gpu.setActiveBuffer(0)
     gpu.set(3,y_dim,text)
+    gpu.setActiveBuffer(buffer)
     iter = iter+1
-    os.sleep(0.05)
+    os.sleep(0.01)
     return true
 end
 
-function main()
+function evo.main()
   
   while mode=='play' do
-      whatNews()
-      implementDots()
-      toUnicode()
-      showMustGoOne()
-      iteration()
-      swap()
+      evo.whatNews()
+      evo.implementDots()
+      evo.toUnicode()
+      evo.showMustGoOne()
+      evo.iteration()
+      evo.swap()
   end
   return true
 end
 
-cls_snap()
-tablesInit()
-userInput()
+evo.cls_snap()
+evo.tablesInit()
+evo.userInput()
+return evo
